@@ -434,10 +434,12 @@ if i_showCycles and array.size(cycleLengths) > 0
 
 var array<float> retLevelsList = array.new_float(0)
 
+// Call ta.highest/ta.lowest at global scope so they run on every bar
+periodHigh = ta.highest(high, i_retLookback)
+periodLow  = ta.lowest(low, i_retLookback)
+
 if i_showRetrace and bar_index == last_bar_index
     array.clear(retLevelsList)
-    periodHigh = ta.highest(high, i_retLookback)
-    periodLow  = ta.lowest(low, i_retLookback)
     priceRange = periodHigh - periodLow
 
     eighths = array.new_float(0)
@@ -593,9 +595,7 @@ bgcolor(ptSquared and i_showPTSquare ? i_colPT : na, title="Price=Time Square")
 // Musical ratios: Octave (2:1), Fifth (3:2), Fourth (4:3), Third (5:4)
 
 if i_showVib and bar_index == last_bar_index
-    periodH = ta.highest(high, i_retLookback)
-    periodL = ta.lowest(low, i_retLookback)
-    baseP = i_vibBase == "Current Close" ? close : i_vibBase == "Period High" ? periodH : i_vibBase == "Period Low" ? periodL : i_vibCustom
+    baseP = i_vibBase == "Current Close" ? close : i_vibBase == "Period High" ? periodHigh : i_vibBase == "Period Low" ? periodLow : i_vibCustom
 
     // Octave ratios (×2, ×4, ÷2, ÷4)
     if i_vibRatios
@@ -604,7 +604,7 @@ if i_showVib and bar_index == last_bar_index
             ratio = array.get(octaves, i)
             lvl = baseP * ratio
             // Only draw if within reasonable visible range
-            if lvl > periodL * 0.5 and lvl < periodH * 2.0
+            if lvl > periodLow * 0.5 and lvl < periodHigh * 2.0
                 line.new(bar_index - 30, lvl, bar_index + 15, lvl,
                      color=i_colVib, width=1, style=line.style_dotted)
                 label.new(bar_index + 17, lvl, "Vib " + str.tostring(ratio, "#.##") + "×",
@@ -617,7 +617,7 @@ if i_showVib and bar_index == last_bar_index
         for i = 0 to array.size(fifths) - 1
             ratio = array.get(fifths, i)
             lvl = baseP * ratio
-            if lvl > periodL * 0.5 and lvl < periodH * 2.0
+            if lvl > periodLow * 0.5 and lvl < periodHigh * 2.0
                 line.new(bar_index - 30, lvl, bar_index + 15, lvl,
                      color=i_colVib, width=1, style=line.style_dotted)
                 label.new(bar_index + 17, lvl, "5th " + str.tostring(ratio, "#.###") + "×",
@@ -630,7 +630,7 @@ if i_showVib and bar_index == last_bar_index
         for i = 0 to array.size(thirds) - 1
             ratio = array.get(thirds, i)
             lvl = baseP * ratio
-            if lvl > periodL * 0.5 and lvl < periodH * 2.0
+            if lvl > periodLow * 0.5 and lvl < periodHigh * 2.0
                 line.new(bar_index - 30, lvl, bar_index + 15, lvl,
                      color=i_colVib, width=1, style=line.style_dotted)
                 label.new(bar_index + 17, lvl, "3rd " + str.tostring(ratio, "#.###") + "×",
