@@ -282,8 +282,7 @@ if i_showSq9 and bar_index == last_bar_index
     array.clear(sq9LevelsList)
     baseP = close
 
-    lineStyle = i_sq9Style == "Dashed" ? line.style_dashed :
-                 i_sq9Style == "Dotted" ? line.style_dotted : line.style_solid
+    lineStyle = i_sq9Style == "Dashed" ? line.style_dashed : i_sq9Style == "Dotted" ? line.style_dotted : line.style_solid
 
     // Draw levels above price
     for n = 1 to i_sq9Levels
@@ -596,9 +595,7 @@ bgcolor(ptSquared and i_showPTSquare ? i_colPT : na, title="Price=Time Square")
 if i_showVib and bar_index == last_bar_index
     periodH = ta.highest(high, i_retLookback)
     periodL = ta.lowest(low, i_retLookback)
-    baseP = i_vibBase == "Current Close" ? close :
-            i_vibBase == "Period High" ? periodH :
-            i_vibBase == "Period Low" ? periodL : i_vibCustom
+    baseP = i_vibBase == "Current Close" ? close : i_vibBase == "Period High" ? periodH : i_vibBase == "Period Low" ? periodL : i_vibCustom
 
     // Octave ratios (×2, ×4, ÷2, ÷4)
     if i_vibRatios
@@ -657,8 +654,8 @@ if i_showConfluence
         for i = 0 to array.size(sq9LevelsList) - 1
             lvl = array.get(sq9LevelsList, i)
             if math.abs(close - lvl) < tolerance
-                confluenceCount += 1
-                confluenceTools += "Sq9 "
+                confluenceCount := confluenceCount + 1
+                confluenceTools := confluenceTools + "Sq9 "
                 break
 
     // Check Retracement levels
@@ -666,24 +663,24 @@ if i_showConfluence
         for i = 0 to array.size(retLevelsList) - 1
             lvl = array.get(retLevelsList, i)
             if math.abs(close - lvl) < tolerance
-                confluenceCount += 1
-                confluenceTools += "Ret "
+                confluenceCount := confluenceCount + 1
+                confluenceTools := confluenceTools + "Ret "
                 break
 
     // Check Price-Time Squaring
     if ptSquared
-        confluenceCount += 1
-        confluenceTools += "PT□ "
+        confluenceCount := confluenceCount + 1
+        confluenceTools := confluenceTools + "PT□ "
 
     // Check Time Cycle
     if isCycleBar
-        confluenceCount += 1
-        confluenceTools += "Cyc "
+        confluenceCount := confluenceCount + 1
+        confluenceTools := confluenceTools + "Cyc "
 
     // Check Swing Reversal
     if swingReversed
-        confluenceCount += 1
-        confluenceTools += "Swg "
+        confluenceCount := confluenceCount + 1
+        confluenceTools := confluenceTools + "Swg "
 
 // Highlight confluence zones on chart
 isConfluent = confluenceCount >= i_confThreshold
@@ -703,15 +700,14 @@ if i_showDash and bar_index == last_bar_index
     dashX = i_dashPos == "Top Right" or i_dashPos == "Bottom Right" ? bar_index + 30 : bar_index - 200
     dashY = i_dashPos == "Top Right" or i_dashPos == "Top Left" ? high + atrValue * 6 : low - atrValue * 12
 
-    textSize = i_dashSize == "Small" ? size.tiny :
-               i_dashSize == "Large" ? size.normal : size.small
+    textSize = i_dashSize == "Small" ? size.tiny : i_dashSize == "Large" ? size.normal : size.small
 
     // Build dashboard text
     dashText = "══ GANN MASTER ══\n"
 
     // Trend from Swing Chart
     trendStr = swingDir == 1 ? "▲ BULLISH" : swingDir == -1 ? "▼ BEARISH" : "— NEUTRAL"
-    dashText += "Trend: " + trendStr + "\n"
+    dashText := dashText + "Trend: " + trendStr + "\n"
 
     // Square of 9 nearest levels
     if i_showSq9 and array.size(sq9LevelsList) > 0
@@ -723,34 +719,33 @@ if i_showDash and bar_index == last_bar_index
                 nearestAbove := lvl
             if lvl < close and lvl > nearestBelow
                 nearestBelow := lvl
-        dashText += "Sq9 Sup: " + str.tostring(nearestBelow, format.mintick) + "\n"
-        dashText += "Sq9 Res: " + str.tostring(nearestAbove, format.mintick) + "\n"
+        dashText := dashText + "Sq9 Sup: " + str.tostring(nearestBelow, format.mintick) + "\n"
+        dashText := dashText + "Sq9 Res: " + str.tostring(nearestAbove, format.mintick) + "\n"
 
     // Price-Time status
     if i_showPTSquare
         ptStatus = ptSquared ? "⚡ SQUARED!" : "Not squared"
-        dashText += "P=T: " + ptStatus + "\n"
+        dashText := dashText + "P=T: " + ptStatus + "\n"
 
     // Time Cycle status
     if i_showCycles
         cycStatus = isCycleBar ? "⚡ CYCLE HIT!" : "Active"
-        dashText += "Cycles: " + cycStatus + "\n"
+        dashText := dashText + "Cycles: " + cycStatus + "\n"
 
     // Confluence
     if i_showConfluence
-        dashText += "Confluence: " + str.tostring(confluenceCount) + " tools"
+        dashText := dashText + "Confluence: " + str.tostring(confluenceCount) + " tools"
         if confluenceCount >= i_confThreshold
-            dashText += " ⚡"
-        dashText += "\n"
+            dashText := dashText + " ⚡"
+        dashText := dashText + "\n"
         if str.length(confluenceTools) > 0
-            dashText += "  [" + confluenceTools + "]\n"
+            dashText := dashText + "  [" + confluenceTools + "]\n"
 
     // Bars from last pivot
     if not na(lastPivotBar)
-        dashText += "Bars from pivot: " + str.tostring(bar_index - lastPivotBar) + "\n"
+        dashText := dashText + "Bars from pivot: " + str.tostring(bar_index - lastPivotBar) + "\n"
 
-    dashCol = swingDir == 1 ? color.new(#1b5e20, 20) :
-              swingDir == -1 ? color.new(#b71c1c, 20) : color.new(#37474f, 20)
+    dashCol = swingDir == 1 ? color.new(#1b5e20, 20) : swingDir == -1 ? color.new(#b71c1c, 20) : color.new(#37474f, 20)
     txtCol = color.white
 
     label.new(dashX, dashY, dashText,
