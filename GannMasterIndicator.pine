@@ -695,19 +695,28 @@ plotshape(isConfluent and i_showConfluence, title="Confluence",
 // ║                        9. DASHBOARD                                         ║
 // ╚══════════════════════════════════════════════════════════════════════════════╝
 
-if i_showDash and bar_index == last_bar_index
-    // Dashboard position
-    dashX = i_dashPos == "Top Right" or i_dashPos == "Bottom Right" ? bar_index + 30 : bar_index - 200
-    dashY = i_dashPos == "Top Right" or i_dashPos == "Top Left" ? high + atrValue * 6 : low - atrValue * 12
+// Dashboard table — using table instead of label so it stays pinned to the viewport
+var tablePos = i_dashPos == "Top Right" ? position.top_right :
+     i_dashPos == "Top Left" ? position.top_left :
+     i_dashPos == "Bottom Right" ? position.bottom_right : position.bottom_left
 
-    textSize = i_dashSize == "Small" ? size.tiny : i_dashSize == "Large" ? size.normal : size.small
+textSize = i_dashSize == "Small" ? size.tiny : i_dashSize == "Large" ? size.normal : size.small
 
-    // Build dashboard text
-    dashText = "══ GANN MASTER ══\n"
+var table dashTable = table.new(tablePos, 1, 20, border_width=0)
+
+if i_showDash and barstate.islast
+    dashCol = swingDir == 1 ? color.new(#1b5e20, 20) : swingDir == -1 ? color.new(#b71c1c, 20) : color.new(#37474f, 20)
+    txtCol  = color.white
+    row     = 0
+
+    // Title
+    table.cell(dashTable, 0, row, "══ GANN MASTER ══", bgcolor=dashCol, text_color=txtCol, text_size=textSize, text_halign=text.align_left)
+    row += 1
 
     // Trend from Swing Chart
     trendStr = swingDir == 1 ? "▲ BULLISH" : swingDir == -1 ? "▼ BEARISH" : "— NEUTRAL"
-    dashText := dashText + "Trend: " + trendStr + "\n"
+    table.cell(dashTable, 0, row, "Trend: " + trendStr, bgcolor=dashCol, text_color=txtCol, text_size=textSize, text_halign=text.align_left)
+    row += 1
 
     // Square of 9 nearest levels
     if i_showSq9 and array.size(sq9LevelsList) > 0
@@ -719,38 +728,38 @@ if i_showDash and bar_index == last_bar_index
                 nearestAbove := lvl
             if lvl < close and lvl > nearestBelow
                 nearestBelow := lvl
-        dashText := dashText + "Sq9 Sup: " + str.tostring(nearestBelow, format.mintick) + "\n"
-        dashText := dashText + "Sq9 Res: " + str.tostring(nearestAbove, format.mintick) + "\n"
+        table.cell(dashTable, 0, row, "Sq9 Sup: " + str.tostring(nearestBelow, format.mintick), bgcolor=dashCol, text_color=txtCol, text_size=textSize, text_halign=text.align_left)
+        row += 1
+        table.cell(dashTable, 0, row, "Sq9 Res: " + str.tostring(nearestAbove, format.mintick), bgcolor=dashCol, text_color=txtCol, text_size=textSize, text_halign=text.align_left)
+        row += 1
 
     // Price-Time status
     if i_showPTSquare
         ptStatus = ptSquared ? "⚡ SQUARED!" : "Not squared"
-        dashText := dashText + "P=T: " + ptStatus + "\n"
+        table.cell(dashTable, 0, row, "P=T: " + ptStatus, bgcolor=dashCol, text_color=txtCol, text_size=textSize, text_halign=text.align_left)
+        row += 1
 
     // Time Cycle status
     if i_showCycles
         cycStatus = isCycleBar ? "⚡ CYCLE HIT!" : "Active"
-        dashText := dashText + "Cycles: " + cycStatus + "\n"
+        table.cell(dashTable, 0, row, "Cycles: " + cycStatus, bgcolor=dashCol, text_color=txtCol, text_size=textSize, text_halign=text.align_left)
+        row += 1
 
     // Confluence
     if i_showConfluence
-        dashText := dashText + "Confluence: " + str.tostring(confluenceCount) + " tools"
+        confText = "Confluence: " + str.tostring(confluenceCount) + " tools"
         if confluenceCount >= i_confThreshold
-            dashText := dashText + " ⚡"
-        dashText := dashText + "\n"
+            confText := confText + " ⚡"
+        table.cell(dashTable, 0, row, confText, bgcolor=dashCol, text_color=txtCol, text_size=textSize, text_halign=text.align_left)
+        row += 1
         if str.length(confluenceTools) > 0
-            dashText := dashText + "  [" + confluenceTools + "]\n"
+            table.cell(dashTable, 0, row, "  [" + confluenceTools + "]", bgcolor=dashCol, text_color=txtCol, text_size=textSize, text_halign=text.align_left)
+            row += 1
 
     // Bars from last pivot
     if not na(lastPivotBar)
-        dashText := dashText + "Bars from pivot: " + str.tostring(bar_index - lastPivotBar) + "\n"
-
-    dashCol = swingDir == 1 ? color.new(#1b5e20, 20) : swingDir == -1 ? color.new(#b71c1c, 20) : color.new(#37474f, 20)
-    txtCol = color.white
-
-    label.new(dashX, dashY, dashText,
-         style=label.style_label_center, color=dashCol,
-         textcolor=txtCol, size=textSize, textalign=text.align_left)
+        table.cell(dashTable, 0, row, "Bars from pivot: " + str.tostring(bar_index - lastPivotBar), bgcolor=dashCol, text_color=txtCol, text_size=textSize, text_halign=text.align_left)
+        row += 1
 
 // ╔══════════════════════════════════════════════════════════════════════════════╗
 // ║                         10. ALERTS                                          ║
