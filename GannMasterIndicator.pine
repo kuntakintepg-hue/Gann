@@ -1,0 +1,778 @@
+// This Pine Script™ source code is subject to the terms of the Mozilla Public License 2.0
+// https://mozilla.org/MPL/2.0/
+// © Gann Master Indicator — A comprehensive implementation of W.D. Gann's trading methods
+// Concepts: Gann Angles/Fan, Square of 9, Time Cycles, 1/8th Retracements,
+//           Swing Charts, Price-Time Squaring, Vibration Levels, Confluence Detection
+
+//@version=5
+indicator("Gann Master Indicator", shorttitle="GANN", overlay=true,
+     max_lines_count=500, max_labels_count=500, max_boxes_count=200)
+
+// ╔══════════════════════════════════════════════════════════════════════════════╗
+// ║                           INPUT SETTINGS                                    ║
+// ╚══════════════════════════════════════════════════════════════════════════════╝
+
+// ── General Settings ─────────────────────────────────────────────────────────
+GRP_GEN = "⚙️ General Settings"
+i_pivotLen      = input.int(10, "Pivot Detection Length", minval=2, maxval=50, group=GRP_GEN,
+                 tooltip="Number of bars on each side to confirm a pivot high/low")
+i_scaleAuto     = input.bool(true, "Auto-Scale Angles (ATR-based)", group=GRP_GEN,
+                 tooltip="Automatically calculate price-per-bar scaling using ATR. Disable to set manually.")
+i_scaleManual   = input.float(1.0, "Manual Scale (price units/bar)", minval=0.0001, step=0.01, group=GRP_GEN,
+                 tooltip="Only used when Auto-Scale is off. Set price movement per bar for angle calculations.")
+i_atrLen        = input.int(14, "ATR Length (for scaling)", minval=1, maxval=100, group=GRP_GEN)
+
+// ── Gann Angles & Fan ───────────────────────────────────────────────────────
+GRP_ANG = "📐 Gann Angles & Fan"
+i_showAngles    = input.bool(true, "Enable Gann Angles", group=GRP_ANG)
+i_angSource     = input.string("Both", "Draw From", options=["Last Major Low", "Last Major High", "Both"], group=GRP_ANG)
+i_angExtend     = input.int(100, "Extend Lines (bars)", minval=10, maxval=500, group=GRP_ANG)
+i_ang1x1        = input.bool(true, "1×1 (45°)", inline="ag1", group=GRP_ANG)
+i_ang2x1        = input.bool(true, "2×1 (63.75°)", inline="ag1", group=GRP_ANG)
+i_ang1x2        = input.bool(true, "1×2 (26.25°)", inline="ag1", group=GRP_ANG)
+i_ang3x1        = input.bool(true, "3×1", inline="ag2", group=GRP_ANG)
+i_ang1x3        = input.bool(true, "1×3", inline="ag2", group=GRP_ANG)
+i_ang4x1        = input.bool(true, "4×1", inline="ag3", group=GRP_ANG)
+i_ang1x4        = input.bool(true, "1×4", inline="ag3", group=GRP_ANG)
+i_ang8x1        = input.bool(false, "8×1", inline="ag4", group=GRP_ANG)
+i_ang1x8        = input.bool(false, "1×8", inline="ag4", group=GRP_ANG)
+i_col1x1        = input.color(color.blue, "1×1 Color", group=GRP_ANG)
+i_colAngUp      = input.color(color.new(color.green, 30), "Rising Angle Color", group=GRP_ANG)
+i_colAngDn      = input.color(color.new(color.red, 30), "Falling Angle Color", group=GRP_ANG)
+i_angWidth       = input.int(1, "Line Width", minval=1, maxval=4, group=GRP_ANG)
+
+// ── Square of 9 ─────────────────────────────────────────────────────────────
+GRP_SQ9 = "🔢 Square of 9 Levels"
+i_showSq9       = input.bool(true, "Enable Square of 9", group=GRP_SQ9)
+i_sq9Levels     = input.int(4, "Levels Above & Below Price", minval=1, maxval=8, group=GRP_SQ9)
+i_sq9Rotation   = input.float(0.25, "Rotation Step", options=[0.125, 0.25, 0.5, 1.0, 2.0], group=GRP_SQ9,
+                 tooltip="0.125=45°, 0.25=90° (Cardinal), 0.5=180°, 1.0=360°, 2.0=720°")
+i_sq9ShowCard   = input.bool(true, "Highlight Cardinal Cross (90°)", group=GRP_SQ9)
+i_sq9ShowOrd    = input.bool(false, "Highlight Ordinal Cross (45°)", group=GRP_SQ9)
+i_colSq9Res     = input.color(color.new(#ff5252, 60), "Resistance Color", group=GRP_SQ9)
+i_colSq9Sup     = input.color(color.new(#4caf50, 60), "Support Color", group=GRP_SQ9)
+i_colSq9Card    = input.color(color.new(#ff9800, 40), "Cardinal Highlight", group=GRP_SQ9)
+i_sq9Style      = input.string("Solid", "Line Style", options=["Solid", "Dashed", "Dotted"], group=GRP_SQ9)
+
+// ── Time Cycles ─────────────────────────────────────────────────────────────
+GRP_CYC = "⏰ Gann Time Cycles"
+i_showCycles    = input.bool(true, "Enable Time Cycles", group=GRP_CYC)
+i_cycFrom       = input.string("Auto (Last Major Pivot)", "Cycle Origin",
+                 options=["Auto (Last Major Pivot)", "Custom Bar Offset"], group=GRP_CYC)
+i_cycOffset     = input.int(0, "Custom Bar Offset (from current)", minval=0, maxval=2000, group=GRP_CYC,
+                 tooltip="Only used with Custom Bar Offset. How many bars back to start counting.")
+i_cyc30         = input.bool(false, "30", inline="cy1", group=GRP_CYC)
+i_cyc36         = input.bool(false, "36", inline="cy1", group=GRP_CYC)
+i_cyc45         = input.bool(false, "45", inline="cy1", group=GRP_CYC)
+i_cyc49         = input.bool(false, "49", inline="cy1", group=GRP_CYC)
+i_cyc60         = input.bool(true, "60", inline="cy2", group=GRP_CYC)
+i_cyc72         = input.bool(false, "72", inline="cy2", group=GRP_CYC)
+i_cyc90         = input.bool(true, "90", inline="cy2", group=GRP_CYC)
+i_cyc120        = input.bool(false, "120", inline="cy2", group=GRP_CYC)
+i_cyc144        = input.bool(true, "144", inline="cy3", group=GRP_CYC)
+i_cyc180        = input.bool(true, "180", inline="cy3", group=GRP_CYC)
+i_cyc240        = input.bool(false, "240", inline="cy3", group=GRP_CYC)
+i_cyc270        = input.bool(false, "270", inline="cy3", group=GRP_CYC)
+i_cyc360        = input.bool(true, "360", inline="cy4", group=GRP_CYC)
+i_cyc144x2      = input.bool(false, "288 (144×2)", inline="cy4", group=GRP_CYC)
+i_colCycMajor   = input.color(color.new(#ff9800, 20), "Major Cycle Color", group=GRP_CYC)
+i_colCycMinor   = input.color(color.new(#ff9800, 60), "Minor Cycle Color", group=GRP_CYC)
+
+// ── Gann Retracement (1/8ths) ───────────────────────────────────────────────
+GRP_RET = "📊 Gann Retracement (1/8th Levels)"
+i_showRetrace   = input.bool(true, "Enable Retracement Levels", group=GRP_RET)
+i_retLookback   = input.int(100, "Lookback Period", minval=10, maxval=1000, group=GRP_RET)
+i_retShowAll    = input.bool(false, "Show All 8 Levels", group=GRP_RET,
+                 tooltip="Off = show key levels only (25%, 37.5%, 50%, 62.5%, 75%)")
+i_colRet        = input.color(color.new(#9c27b0, 50), "Level Color", group=GRP_RET)
+i_colRet50      = input.color(color.new(#e91e63, 30), "50% Level Color", group=GRP_RET)
+
+// ── Gann Swing Chart ────────────────────────────────────────────────────────
+GRP_SWG = "📈 Gann Swing Chart"
+i_showSwing     = input.bool(true, "Enable Swing Chart", group=GRP_SWG)
+i_swingBars     = input.int(2, "Reversal Bars", minval=1, maxval=5, group=GRP_SWG,
+                 tooltip="Gann used 2-bar and 3-bar swing methods. Bars needed to confirm trend change.")
+i_colSwUp       = input.color(color.new(#00e676, 20), "Upswing Color", group=GRP_SWG)
+i_colSwDn       = input.color(color.new(#ff1744, 20), "Downswing Color", group=GRP_SWG)
+i_swingWidth    = input.int(2, "Line Width", minval=1, maxval=4, group=GRP_SWG)
+
+// ── Price-Time Squaring ─────────────────────────────────────────────────────
+GRP_PTQ = "⬜ Price-Time Squaring"
+i_showPTSquare  = input.bool(true, "Enable Price=Time Detection", group=GRP_PTQ,
+                 tooltip="Highlights bars where price range ≈ time elapsed from the last swing pivot — a Gann signal for trend change.")
+i_ptTolerance   = input.float(5.0, "Tolerance (%)", minval=0.5, maxval=20.0, step=0.5, group=GRP_PTQ)
+i_colPT         = input.color(color.new(#ffd600, 30), "Square Zone Color", group=GRP_PTQ)
+
+// ── Vibration / Harmonic Levels ─────────────────────────────────────────────
+GRP_VIB = "🔊 Vibration / Harmonic Levels"
+i_showVib       = input.bool(false, "Enable Vibration Levels", group=GRP_VIB,
+                 tooltip="Gann's Law of Vibration: price levels based on musical/harmonic ratios applied to a base price.")
+i_vibBase       = input.string("Current Close", "Base Price",
+                 options=["Current Close", "Period High", "Period Low", "Custom"], group=GRP_VIB)
+i_vibCustom     = input.float(100.0, "Custom Base Price", minval=0.01, group=GRP_VIB)
+i_vibRatios     = input.bool(true, "Octave Ratios (×2, ×4, ÷2, ÷4)", group=GRP_VIB)
+i_vibFifths     = input.bool(true, "Fifth Ratios (×1.5, ÷1.5)", group=GRP_VIB)
+i_vibThirds     = input.bool(false, "Third Ratios (×1.33, ÷1.33)", group=GRP_VIB)
+i_colVib        = input.color(color.new(#00bcd4, 50), "Vibration Color", group=GRP_VIB)
+
+// ── Confluence & Dashboard ──────────────────────────────────────────────────
+GRP_DASH = "📋 Dashboard & Confluence"
+i_showDash      = input.bool(true, "Show Dashboard", group=GRP_DASH)
+i_dashPos       = input.string("Top Right", "Position",
+                 options=["Top Right", "Top Left", "Bottom Right", "Bottom Left"], group=GRP_DASH)
+i_dashSize      = input.string("Normal", "Size", options=["Small", "Normal", "Large"], group=GRP_DASH)
+i_showConfluence = input.bool(true, "Highlight Confluence Zones", group=GRP_DASH,
+                 tooltip="Marks price zones where 2+ Gann tools give the same level")
+i_confThreshold = input.int(2, "Min Tools for Confluence", minval=2, maxval=5, group=GRP_DASH)
+
+// ── Alerts ──────────────────────────────────────────────────────────────────
+GRP_ALT = "🔔 Alerts"
+i_alertSq9      = input.bool(true, "Sq9 Level Touch", group=GRP_ALT)
+i_alertCycle    = input.bool(true, "Time Cycle Hit", group=GRP_ALT)
+i_alertPTSq     = input.bool(true, "Price=Time Square", group=GRP_ALT)
+i_alertSwing    = input.bool(true, "Swing Reversal", group=GRP_ALT)
+i_alertConf     = input.bool(true, "Confluence Zone", group=GRP_ALT)
+
+// ╔══════════════════════════════════════════════════════════════════════════════╗
+// ║                         CORE CALCULATIONS                                   ║
+// ╚══════════════════════════════════════════════════════════════════════════════╝
+
+// ── ATR-Based Scaling ───────────────────────────────────────────────────────
+atrValue     = ta.atr(i_atrLen)
+pricePerBar  = i_scaleAuto ? atrValue : i_scaleManual
+
+// ── Pivot Detection ─────────────────────────────────────────────────────────
+pivotHigh    = ta.pivothigh(high, i_pivotLen, i_pivotLen)
+pivotLow     = ta.pivotlow(low, i_pivotLen, i_pivotLen)
+
+// Track last major pivots
+var float lastPH       = na
+var int   lastPH_bar   = na
+var float lastPL       = na
+var int   lastPL_bar   = na
+var float prevPH       = na
+var int   prevPH_bar   = na
+var float prevPL       = na
+var int   prevPL_bar   = na
+
+if not na(pivotHigh)
+    prevPH     := lastPH
+    prevPH_bar := lastPH_bar
+    lastPH     := pivotHigh
+    lastPH_bar := bar_index - i_pivotLen
+
+if not na(pivotLow)
+    prevPL     := lastPL
+    prevPL_bar := lastPL_bar
+    lastPL     := pivotLow
+    lastPL_bar := bar_index - i_pivotLen
+
+// Most recent pivot of any type
+var float lastPivotPrice = na
+var int   lastPivotBar   = na
+var int   lastPivotDir   = 0  // 1 = high, -1 = low
+
+if not na(pivotHigh)
+    lastPivotPrice := pivotHigh
+    lastPivotBar   := bar_index - i_pivotLen
+    lastPivotDir   := 1
+if not na(pivotLow)
+    lastPivotPrice := pivotLow
+    lastPivotBar   := bar_index - i_pivotLen
+    lastPivotDir   := -1
+
+// ╔══════════════════════════════════════════════════════════════════════════════╗
+// ║                      1. GANN ANGLES & FAN                                   ║
+// ╚══════════════════════════════════════════════════════════════════════════════╝
+
+// Angle multipliers: [priceMultiplier, timeMultiplier]
+// 1×1 = 1 unit price per 1 unit time (the master 45° angle)
+// 2×1 = 2 units price per 1 unit time (steeper, bullish)
+// 1×2 = 1 unit price per 2 units time (shallower)
+
+drawGannAngle(startBar, startPrice, priceMultiplier, timeMultiplier, isUpward, col, width) =>
+    if not na(startBar) and not na(startPrice) and bar_index == last_bar_index
+        slope = (priceMultiplier / timeMultiplier) * pricePerBar
+        endBar = startBar + i_angExtend
+        endPrice = isUpward ? startPrice + slope * i_angExtend : startPrice - slope * i_angExtend
+        line.new(startBar, startPrice, endBar, endPrice,
+             xloc=xloc.bar_index, color=col, width=width, style=line.style_solid)
+
+// Draw angles from last major low (rising)
+drawAnglesFromLow() =>
+    if i_showAngles and not na(lastPL) and not na(lastPL_bar)
+        origin = lastPL_bar
+        price  = lastPL
+        if i_ang1x8
+            drawGannAngle(origin, price, 1, 8, true, i_colAngUp, i_angWidth)
+        if i_ang1x4
+            drawGannAngle(origin, price, 1, 4, true, i_colAngUp, i_angWidth)
+        if i_ang1x3
+            drawGannAngle(origin, price, 1, 3, true, i_colAngUp, i_angWidth)
+        if i_ang1x2
+            drawGannAngle(origin, price, 1, 2, true, i_colAngUp, i_angWidth)
+        if i_ang1x1
+            drawGannAngle(origin, price, 1, 1, true, i_col1x1, i_angWidth + 1)
+        if i_ang2x1
+            drawGannAngle(origin, price, 2, 1, true, i_colAngUp, i_angWidth)
+        if i_ang3x1
+            drawGannAngle(origin, price, 3, 1, true, i_colAngUp, i_angWidth)
+        if i_ang4x1
+            drawGannAngle(origin, price, 4, 1, true, i_colAngUp, i_angWidth)
+        if i_ang8x1
+            drawGannAngle(origin, price, 8, 1, true, i_colAngUp, i_angWidth)
+
+// Draw angles from last major high (falling)
+drawAnglesFromHigh() =>
+    if i_showAngles and not na(lastPH) and not na(lastPH_bar)
+        origin = lastPH_bar
+        price  = lastPH
+        if i_ang1x8
+            drawGannAngle(origin, price, 1, 8, false, i_colAngDn, i_angWidth)
+        if i_ang1x4
+            drawGannAngle(origin, price, 1, 4, false, i_colAngDn, i_angWidth)
+        if i_ang1x3
+            drawGannAngle(origin, price, 1, 3, false, i_colAngDn, i_angWidth)
+        if i_ang1x2
+            drawGannAngle(origin, price, 1, 2, false, i_colAngDn, i_angWidth)
+        if i_ang1x1
+            drawGannAngle(origin, price, 1, 1, false, i_col1x1, i_angWidth + 1)
+        if i_ang2x1
+            drawGannAngle(origin, price, 2, 1, false, i_colAngDn, i_angWidth)
+        if i_ang3x1
+            drawGannAngle(origin, price, 3, 1, false, i_colAngDn, i_angWidth)
+        if i_ang4x1
+            drawGannAngle(origin, price, 4, 1, false, i_colAngDn, i_angWidth)
+        if i_ang8x1
+            drawGannAngle(origin, price, 8, 1, false, i_colAngDn, i_angWidth)
+
+if i_showAngles and bar_index == last_bar_index
+    if i_angSource == "Last Major Low" or i_angSource == "Both"
+        drawAnglesFromLow()
+    if i_angSource == "Last Major High" or i_angSource == "Both"
+        drawAnglesFromHigh()
+
+// ╔══════════════════════════════════════════════════════════════════════════════╗
+// ║                      2. SQUARE OF 9 LEVELS                                  ║
+// ╚══════════════════════════════════════════════════════════════════════════════╝
+
+// Square of 9: Price levels based on the square root of the current price
+// Formula: Level = (√Price ± n × rotation)²
+// Cardinal Cross = 90° increments (rotation step = 0.25 of full revolution)
+// Ordinal Cross  = 45° offsets from cardinal
+
+// Calculate a single Sq9 level
+sq9Level(basePrice, steps) =>
+    sqrtBase = math.sqrt(math.abs(basePrice))
+    result = math.pow(sqrtBase + steps * i_sq9Rotation, 2)
+    result
+
+// Determine if a level falls on the Cardinal or Ordinal cross
+// Cardinal: levels at multiples of full rotation from a whole-number sqrt
+// Ordinal: levels at half-rotation offsets
+isCardinalLevel(steps) =>
+    // Cardinal = every 4th step when rotation=0.25 (i.e., full 360°)
+    fullRotationSteps = math.round(1.0 / i_sq9Rotation)
+    steps % fullRotationSteps == 0
+
+// Store Sq9 levels for confluence detection
+var array<float> sq9LevelsList = array.new_float(0)
+
+if i_showSq9 and bar_index == last_bar_index
+    array.clear(sq9LevelsList)
+    baseP = close
+
+    lineStyle = i_sq9Style == "Dashed" ? line.style_dashed :
+                 i_sq9Style == "Dotted" ? line.style_dotted : line.style_solid
+
+    // Draw levels above price
+    for n = 1 to i_sq9Levels
+        lvl = sq9Level(baseP, n)
+        array.push(sq9LevelsList, lvl)
+        isCard = isCardinalLevel(n)
+        col = isCard and i_sq9ShowCard ? i_colSq9Card : i_colSq9Res
+        w = isCard and i_sq9ShowCard ? 2 : 1
+        line.new(bar_index - 40, lvl, bar_index + 20, lvl,
+             color=col, width=w, style=lineStyle)
+        txt = isCard ? "Sq9 R" + str.tostring(n) + " ★" : "Sq9 R" + str.tostring(n)
+        label.new(bar_index + 22, lvl, txt,
+             style=label.style_label_left, color=color.new(col, 80),
+             textcolor=col, size=size.tiny)
+
+    // Draw levels below price
+    for n = 1 to i_sq9Levels
+        lvl = sq9Level(baseP, -n)
+        if lvl > 0
+            array.push(sq9LevelsList, lvl)
+            isCard = isCardinalLevel(n)
+            col = isCard and i_sq9ShowCard ? i_colSq9Card : i_colSq9Sup
+            w = isCard and i_sq9ShowCard ? 2 : 1
+            line.new(bar_index - 40, lvl, bar_index + 20, lvl,
+                 color=col, width=w, style=lineStyle)
+            txt = isCard ? "Sq9 S" + str.tostring(n) + " ★" : "Sq9 S" + str.tostring(n)
+            label.new(bar_index + 22, lvl, txt,
+                 style=label.style_label_left, color=color.new(col, 80),
+                 textcolor=col, size=size.tiny)
+
+    // Ordinal cross overlay levels (45° offsets)
+    if i_sq9ShowOrd
+        for n = 1 to i_sq9Levels
+            sqrtBase = math.sqrt(math.abs(baseP))
+            // Ordinal = offset by half of rotation step
+            halfStep = i_sq9Rotation / 2.0
+            lvlUp = math.pow(sqrtBase + n * i_sq9Rotation + halfStep, 2)
+            lvlDn = math.pow(sqrtBase - n * i_sq9Rotation - halfStep, 2)
+            ordCol = color.new(#7c4dff, 60)
+            if lvlUp > 0
+                line.new(bar_index - 40, lvlUp, bar_index + 20, lvlUp,
+                     color=ordCol, width=1, style=line.style_dotted)
+                label.new(bar_index + 22, lvlUp, "Ord " + str.tostring(n),
+                     style=label.style_label_left, color=color.new(ordCol, 80),
+                     textcolor=ordCol, size=size.tiny)
+            if lvlDn > 0
+                line.new(bar_index - 40, lvlDn, bar_index + 20, lvlDn,
+                     color=ordCol, width=1, style=line.style_dotted)
+                label.new(bar_index + 22, lvlDn, "Ord -" + str.tostring(n),
+                     style=label.style_label_left, color=color.new(ordCol, 80),
+                     textcolor=ordCol, size=size.tiny)
+
+// Sq9 proximity alert
+sq9NearLevel = false
+if i_showSq9 and array.size(sq9LevelsList) > 0
+    for i = 0 to array.size(sq9LevelsList) - 1
+        lvl = array.get(sq9LevelsList, i)
+        dist = math.abs(close - lvl) / close * 100
+        if dist < 0.3  // within 0.3% of a Sq9 level
+            sq9NearLevel := true
+            break
+
+// ╔══════════════════════════════════════════════════════════════════════════════╗
+// ║                      3. GANN TIME CYCLES                                    ║
+// ╚══════════════════════════════════════════════════════════════════════════════╝
+
+// Build array of active cycle lengths
+var array<int> cycleLengths = array.new_int(0)
+var bool cyclesInitialized = false
+
+if not cyclesInitialized
+    if i_cyc30  : array.push(cycleLengths, 30)
+    if i_cyc36  : array.push(cycleLengths, 36)
+    if i_cyc45  : array.push(cycleLengths, 45)
+    if i_cyc49  : array.push(cycleLengths, 49)
+    if i_cyc60  : array.push(cycleLengths, 60)
+    if i_cyc72  : array.push(cycleLengths, 72)
+    if i_cyc90  : array.push(cycleLengths, 90)
+    if i_cyc120 : array.push(cycleLengths, 120)
+    if i_cyc144 : array.push(cycleLengths, 144)
+    if i_cyc180 : array.push(cycleLengths, 180)
+    if i_cyc240 : array.push(cycleLengths, 240)
+    if i_cyc270 : array.push(cycleLengths, 270)
+    if i_cyc360 : array.push(cycleLengths, 360)
+    if i_cyc144x2 : array.push(cycleLengths, 288)
+    cyclesInitialized := true
+
+// Determine cycle origin bar
+cycleOriginBar = 0
+if i_cycFrom == "Custom Bar Offset"
+    cycleOriginBar := bar_index - i_cycOffset
+else
+    cycleOriginBar := nz(lastPivotBar, 0)
+
+// Draw cycle vertical lines
+isCycleBar = false
+
+if i_showCycles and bar_index == last_bar_index and array.size(cycleLengths) > 0
+    originB = cycleOriginBar
+    for i = 0 to array.size(cycleLengths) - 1
+        cycLen = array.get(cycleLengths, i)
+        isMajor = cycLen == 144 or cycLen == 180 or cycLen == 360
+        col = isMajor ? i_colCycMajor : i_colCycMinor
+        w = isMajor ? 2 : 1
+        // Project forward and backward
+        for mult = 1 to 5
+            targetBar = originB + cycLen * mult
+            if targetBar >= bar_index - 5 and targetBar <= bar_index + 100
+                line.new(targetBar, low - atrValue * 2, targetBar, high + atrValue * 2,
+                     color=col, width=w, style=line.style_dashed, xloc=xloc.bar_index)
+                label.new(targetBar, high + atrValue * 2.5,
+                     str.tostring(cycLen) + "(" + str.tostring(mult) + "×)",
+                     style=label.style_label_down, color=color.new(col, 70),
+                     textcolor=col, size=size.tiny)
+
+// Check if current bar is on a cycle
+if i_showCycles and array.size(cycleLengths) > 0
+    originB = cycleOriginBar
+    barsFromOrigin = bar_index - originB
+    if barsFromOrigin > 0
+        for i = 0 to array.size(cycleLengths) - 1
+            cycLen = array.get(cycleLengths, i)
+            if barsFromOrigin % cycLen == 0
+                isCycleBar := true
+                break
+
+// ╔══════════════════════════════════════════════════════════════════════════════╗
+// ║                  4. GANN RETRACEMENT (1/8TH LEVELS)                         ║
+// ╚══════════════════════════════════════════════════════════════════════════════╝
+
+// Gann divided the price range into 8ths:
+// 0/8 = 0%, 1/8 = 12.5%, 2/8 = 25%, 3/8 = 37.5%, 4/8 = 50%,
+// 5/8 = 62.5%, 6/8 = 75%, 7/8 = 87.5%, 8/8 = 100%
+// The 50% (4/8) is the most important. 3/8 and 5/8 are the next most significant.
+
+var array<float> retLevelsList = array.new_float(0)
+
+if i_showRetrace and bar_index == last_bar_index
+    array.clear(retLevelsList)
+    periodHigh = ta.highest(high, i_retLookback)
+    periodLow  = ta.lowest(low, i_retLookback)
+    priceRange = periodHigh - periodLow
+
+    eighths = array.new_float(0)
+    names   = array.new_string(0)
+    show    = array.new_bool(0)
+
+    if i_retShowAll
+        array.push(eighths, 0.0)    : array.push(names, "0/8 (0%)")      : array.push(show, true)
+        array.push(eighths, 0.125)  : array.push(names, "1/8 (12.5%)")   : array.push(show, true)
+    array.push(eighths, 0.25)   : array.push(names, "2/8 (25%)")     : array.push(show, true)
+    array.push(eighths, 0.375)  : array.push(names, "3/8 (37.5%)")   : array.push(show, true)
+    array.push(eighths, 0.5)    : array.push(names, "4/8 (50%)")     : array.push(show, true)
+    array.push(eighths, 0.625)  : array.push(names, "5/8 (62.5%)")   : array.push(show, true)
+    array.push(eighths, 0.75)   : array.push(names, "6/8 (75%)")     : array.push(show, true)
+    if i_retShowAll
+        array.push(eighths, 0.875)  : array.push(names, "7/8 (87.5%)")   : array.push(show, true)
+        array.push(eighths, 1.0)    : array.push(names, "8/8 (100%)")    : array.push(show, true)
+
+    for i = 0 to array.size(eighths) - 1
+        frac = array.get(eighths, i)
+        lvl  = periodLow + priceRange * frac
+        nm   = array.get(names, i)
+        array.push(retLevelsList, lvl)
+        is50 = math.abs(frac - 0.5) < 0.01
+        col  = is50 ? i_colRet50 : i_colRet
+        w    = is50 ? 2 : 1
+        sty  = is50 ? line.style_solid : line.style_dashed
+        line.new(bar_index - i_retLookback, lvl, bar_index + 10, lvl,
+             color=col, width=w, style=sty)
+        label.new(bar_index + 12, lvl, nm,
+             style=label.style_label_left, color=color.new(col, 80),
+             textcolor=col, size=size.tiny)
+
+// ╔══════════════════════════════════════════════════════════════════════════════╗
+// ║                      5. GANN SWING CHART                                    ║
+// ╚══════════════════════════════════════════════════════════════════════════════╝
+
+// Gann's swing chart tracks the trend by connecting swing highs and lows.
+// A swing reversal occurs when N consecutive bars make higher highs (or lower lows).
+
+var int   swingDir       = 0  // 1 = up, -1 = down
+var float swingPivot     = close
+var int   swingPivotBar  = bar_index
+var int   consecUp       = 0
+var int   consecDown     = 0
+var float swingHigh      = high
+var float swingLow       = low
+var bool  swingReversed  = false
+
+swingReversed := false
+
+if i_showSwing
+    // Count consecutive higher highs / lower lows
+    if high > high[1]
+        consecUp   := consecUp + 1
+        consecDown := 0
+    else if low < low[1]
+        consecDown := consecDown + 1
+        consecUp   := 0
+    else
+        consecUp   := 0
+        consecDown := 0
+
+    // Swing up
+    if swingDir != 1 and consecUp >= i_swingBars
+        if swingDir == -1
+            // Draw the down leg
+            line.new(swingPivotBar, swingPivot, bar_index - i_swingBars, swingLow,
+                 color=i_colSwDn, width=i_swingWidth, style=line.style_solid)
+            swingPivot    := swingLow
+            swingPivotBar := bar_index - i_swingBars
+        swingDir      := 1
+        swingHigh     := high
+        swingReversed := true
+
+    // Swing down
+    if swingDir != -1 and consecDown >= i_swingBars
+        if swingDir == 1
+            // Draw the up leg
+            line.new(swingPivotBar, swingPivot, bar_index - i_swingBars, swingHigh,
+                 color=i_colSwUp, width=i_swingWidth, style=line.style_solid)
+            swingPivot    := swingHigh
+            swingPivotBar := bar_index - i_swingBars
+        swingDir      := -1
+        swingLow      := low
+        swingReversed := true
+
+    // Track current swing extreme
+    if swingDir == 1 and high > swingHigh
+        swingHigh := high
+    if swingDir == -1 and low < swingLow
+        swingLow := low
+
+    // Draw current (incomplete) leg
+    if bar_index == last_bar_index
+        if swingDir == 1
+            line.new(swingPivotBar, swingPivot, bar_index, swingHigh,
+                 color=i_colSwUp, width=i_swingWidth, style=line.style_dotted)
+        else if swingDir == -1
+            line.new(swingPivotBar, swingPivot, bar_index, swingLow,
+                 color=i_colSwDn, width=i_swingWidth, style=line.style_dotted)
+
+// ╔══════════════════════════════════════════════════════════════════════════════╗
+// ║                    6. PRICE-TIME SQUARING                                   ║
+// ╚══════════════════════════════════════════════════════════════════════════════╝
+
+// Gann's concept: when the number of points moved equals the number of time
+// periods elapsed, the market "squares" and a trend change is likely.
+
+ptSquared = false
+
+if i_showPTSquare and not na(lastPivotPrice) and not na(lastPivotBar)
+    barsElapsed = bar_index - lastPivotBar
+    priceMove   = math.abs(close - lastPivotPrice)
+
+    // Normalize price movement to "units" using the scale factor
+    priceUnits = priceMove / pricePerBar
+    timeDiff   = math.abs(priceUnits - barsElapsed)
+    avgUnit    = (priceUnits + barsElapsed) / 2.0
+
+    if avgUnit > 0
+        pctDiff = timeDiff / avgUnit * 100
+        if pctDiff <= i_ptTolerance
+            ptSquared := true
+
+// Highlight squaring bars
+bgcolor(ptSquared and i_showPTSquare ? i_colPT : na, title="Price=Time Square")
+
+// ╔══════════════════════════════════════════════════════════════════════════════╗
+// ║                   7. VIBRATION / HARMONIC LEVELS                            ║
+// ╚══════════════════════════════════════════════════════════════════════════════╝
+
+// Gann's Law of Vibration: All matter vibrates at certain rates.
+// Prices vibrate at their own frequency. Harmonic intervals project key levels.
+// Musical ratios: Octave (2:1), Fifth (3:2), Fourth (4:3), Third (5:4)
+
+if i_showVib and bar_index == last_bar_index
+    periodH = ta.highest(high, i_retLookback)
+    periodL = ta.lowest(low, i_retLookback)
+    baseP = i_vibBase == "Current Close" ? close :
+            i_vibBase == "Period High" ? periodH :
+            i_vibBase == "Period Low" ? periodL : i_vibCustom
+
+    // Octave ratios (×2, ×4, ÷2, ÷4)
+    if i_vibRatios
+        octaves = array.from(0.25, 0.5, 2.0, 4.0)
+        for i = 0 to array.size(octaves) - 1
+            ratio = array.get(octaves, i)
+            lvl = baseP * ratio
+            // Only draw if within reasonable visible range
+            if lvl > periodL * 0.5 and lvl < periodH * 2.0
+                line.new(bar_index - 30, lvl, bar_index + 15, lvl,
+                     color=i_colVib, width=1, style=line.style_dotted)
+                label.new(bar_index + 17, lvl, "Vib " + str.tostring(ratio, "#.##") + "×",
+                     style=label.style_label_left, color=color.new(i_colVib, 80),
+                     textcolor=i_colVib, size=size.tiny)
+
+    // Fifth ratios
+    if i_vibFifths
+        fifths = array.from(0.667, 1.5)
+        for i = 0 to array.size(fifths) - 1
+            ratio = array.get(fifths, i)
+            lvl = baseP * ratio
+            if lvl > periodL * 0.5 and lvl < periodH * 2.0
+                line.new(bar_index - 30, lvl, bar_index + 15, lvl,
+                     color=i_colVib, width=1, style=line.style_dotted)
+                label.new(bar_index + 17, lvl, "5th " + str.tostring(ratio, "#.###") + "×",
+                     style=label.style_label_left, color=color.new(i_colVib, 80),
+                     textcolor=i_colVib, size=size.tiny)
+
+    // Third ratios
+    if i_vibThirds
+        thirds = array.from(0.75, 1.333)
+        for i = 0 to array.size(thirds) - 1
+            ratio = array.get(thirds, i)
+            lvl = baseP * ratio
+            if lvl > periodL * 0.5 and lvl < periodH * 2.0
+                line.new(bar_index - 30, lvl, bar_index + 15, lvl,
+                     color=i_colVib, width=1, style=line.style_dotted)
+                label.new(bar_index + 17, lvl, "3rd " + str.tostring(ratio, "#.###") + "×",
+                     style=label.style_label_left, color=color.new(i_colVib, 80),
+                     textcolor=i_colVib, size=size.tiny)
+
+// ╔══════════════════════════════════════════════════════════════════════════════╗
+// ║                    8. CONFLUENCE DETECTION                                  ║
+// ╚══════════════════════════════════════════════════════════════════════════════╝
+
+// Count how many Gann tools converge near the current price
+confluenceCount = 0
+var string confluenceTools = ""
+
+if i_showConfluence
+    confluenceTools := ""
+    tolerance = close * 0.005  // 0.5% tolerance band
+
+    // Check Sq9 levels
+    if i_showSq9 and array.size(sq9LevelsList) > 0
+        for i = 0 to array.size(sq9LevelsList) - 1
+            lvl = array.get(sq9LevelsList, i)
+            if math.abs(close - lvl) < tolerance
+                confluenceCount += 1
+                confluenceTools += "Sq9 "
+                break
+
+    // Check Retracement levels
+    if i_showRetrace and array.size(retLevelsList) > 0
+        for i = 0 to array.size(retLevelsList) - 1
+            lvl = array.get(retLevelsList, i)
+            if math.abs(close - lvl) < tolerance
+                confluenceCount += 1
+                confluenceTools += "Ret "
+                break
+
+    // Check Price-Time Squaring
+    if ptSquared
+        confluenceCount += 1
+        confluenceTools += "PT□ "
+
+    // Check Time Cycle
+    if isCycleBar
+        confluenceCount += 1
+        confluenceTools += "Cyc "
+
+    // Check Swing Reversal
+    if swingReversed
+        confluenceCount += 1
+        confluenceTools += "Swg "
+
+// Highlight confluence zones on chart
+isConfluent = confluenceCount >= i_confThreshold
+bgcolor(isConfluent and i_showConfluence ? color.new(#ffeb3b, 80) : na, title="Confluence Zone")
+
+// Confluence marker
+plotshape(isConfluent and i_showConfluence, title="Confluence",
+     style=shape.diamond, location=location.abovebar,
+     color=color.new(#ff6f00, 0), size=size.small, text="C")
+
+// ╔══════════════════════════════════════════════════════════════════════════════╗
+// ║                        9. DASHBOARD                                         ║
+// ╚══════════════════════════════════════════════════════════════════════════════╝
+
+if i_showDash and bar_index == last_bar_index
+    // Dashboard position
+    dashX = i_dashPos == "Top Right" or i_dashPos == "Bottom Right" ? bar_index + 30 : bar_index - 200
+    dashY = i_dashPos == "Top Right" or i_dashPos == "Top Left" ? high + atrValue * 6 : low - atrValue * 12
+
+    textSize = i_dashSize == "Small" ? size.tiny :
+               i_dashSize == "Large" ? size.normal : size.small
+
+    // Build dashboard text
+    dashText = "══ GANN MASTER ══\n"
+
+    // Trend from Swing Chart
+    trendStr = swingDir == 1 ? "▲ BULLISH" : swingDir == -1 ? "▼ BEARISH" : "— NEUTRAL"
+    dashText += "Trend: " + trendStr + "\n"
+
+    // Square of 9 nearest levels
+    if i_showSq9 and array.size(sq9LevelsList) > 0
+        nearestAbove = close * 10.0
+        nearestBelow = 0.0
+        for i = 0 to array.size(sq9LevelsList) - 1
+            lvl = array.get(sq9LevelsList, i)
+            if lvl > close and lvl < nearestAbove
+                nearestAbove := lvl
+            if lvl < close and lvl > nearestBelow
+                nearestBelow := lvl
+        dashText += "Sq9 Sup: " + str.tostring(nearestBelow, format.mintick) + "\n"
+        dashText += "Sq9 Res: " + str.tostring(nearestAbove, format.mintick) + "\n"
+
+    // Price-Time status
+    if i_showPTSquare
+        ptStatus = ptSquared ? "⚡ SQUARED!" : "Not squared"
+        dashText += "P=T: " + ptStatus + "\n"
+
+    // Time Cycle status
+    if i_showCycles
+        cycStatus = isCycleBar ? "⚡ CYCLE HIT!" : "Active"
+        dashText += "Cycles: " + cycStatus + "\n"
+
+    // Confluence
+    if i_showConfluence
+        dashText += "Confluence: " + str.tostring(confluenceCount) + " tools"
+        if confluenceCount >= i_confThreshold
+            dashText += " ⚡"
+        dashText += "\n"
+        if str.length(confluenceTools) > 0
+            dashText += "  [" + confluenceTools + "]\n"
+
+    // Bars from last pivot
+    if not na(lastPivotBar)
+        dashText += "Bars from pivot: " + str.tostring(bar_index - lastPivotBar) + "\n"
+
+    dashCol = swingDir == 1 ? color.new(#1b5e20, 20) :
+              swingDir == -1 ? color.new(#b71c1c, 20) : color.new(#37474f, 20)
+    txtCol = color.white
+
+    label.new(dashX, dashY, dashText,
+         style=label.style_label_center, color=dashCol,
+         textcolor=txtCol, size=textSize, textalign=text.align_left)
+
+// ╔══════════════════════════════════════════════════════════════════════════════╗
+// ║                         10. ALERTS                                          ║
+// ╚══════════════════════════════════════════════════════════════════════════════╝
+
+// Square of 9 level proximity
+alertcondition(sq9NearLevel and i_alertSq9,
+     title="Sq9 Level Touch",
+     message="Price is near a Gann Square of 9 level")
+
+// Time Cycle hit
+alertcondition(isCycleBar and i_alertCycle,
+     title="Time Cycle Hit",
+     message="Current bar lands on a Gann Time Cycle")
+
+// Price-Time Squaring
+alertcondition(ptSquared and i_alertPTSq,
+     title="Price = Time Squared",
+     message="Price movement equals time elapsed — Gann squaring detected!")
+
+// Swing Reversal
+alertcondition(swingReversed and i_alertSwing,
+     title="Swing Reversal",
+     message="Gann Swing Chart reversal detected")
+
+// Confluence Zone
+alertcondition(isConfluent and i_alertConf,
+     title="Confluence Zone",
+     message="Multiple Gann tools converging — high-probability zone!")
+
+// ╔══════════════════════════════════════════════════════════════════════════════╗
+// ║                      11. BAR COLORING (OPTIONAL)                            ║
+// ╚══════════════════════════════════════════════════════════════════════════════╝
+
+// Color bars based on swing direction for easy visual trend reading
+barcolor(i_showSwing and swingDir == 1 ? color.new(#00e676, 50) :
+         i_showSwing and swingDir == -1 ? color.new(#ff1744, 50) : na,
+         title="Swing Trend Bar Color")
+
+// ╔══════════════════════════════════════════════════════════════════════════════╗
+// ║                    12. PIVOT MARKERS                                        ║
+// ╚══════════════════════════════════════════════════════════════════════════════╝
+
+// Mark detected pivots on the chart
+plotshape(not na(pivotHigh), title="Pivot High", style=shape.triangledown,
+     location=location.abovebar, color=color.new(color.red, 30),
+     size=size.tiny, offset=-i_pivotLen)
+plotshape(not na(pivotLow), title="Pivot Low", style=shape.triangleup,
+     location=location.belowbar, color=color.new(color.green, 30),
+     size=size.tiny, offset=-i_pivotLen)
+
+// End of Gann Master Indicator
