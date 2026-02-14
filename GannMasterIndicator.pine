@@ -355,20 +355,34 @@ var array<int> cycleLengths = array.new_int(0)
 var bool cyclesInitialized = false
 
 if not cyclesInitialized
-    if i_cyc30  : array.push(cycleLengths, 30)
-    if i_cyc36  : array.push(cycleLengths, 36)
-    if i_cyc45  : array.push(cycleLengths, 45)
-    if i_cyc49  : array.push(cycleLengths, 49)
-    if i_cyc60  : array.push(cycleLengths, 60)
-    if i_cyc72  : array.push(cycleLengths, 72)
-    if i_cyc90  : array.push(cycleLengths, 90)
-    if i_cyc120 : array.push(cycleLengths, 120)
-    if i_cyc144 : array.push(cycleLengths, 144)
-    if i_cyc180 : array.push(cycleLengths, 180)
-    if i_cyc240 : array.push(cycleLengths, 240)
-    if i_cyc270 : array.push(cycleLengths, 270)
-    if i_cyc360 : array.push(cycleLengths, 360)
-    if i_cyc144x2 : array.push(cycleLengths, 288)
+    if i_cyc30
+        array.push(cycleLengths, 30)
+    if i_cyc36
+        array.push(cycleLengths, 36)
+    if i_cyc45
+        array.push(cycleLengths, 45)
+    if i_cyc49
+        array.push(cycleLengths, 49)
+    if i_cyc60
+        array.push(cycleLengths, 60)
+    if i_cyc72
+        array.push(cycleLengths, 72)
+    if i_cyc90
+        array.push(cycleLengths, 90)
+    if i_cyc120
+        array.push(cycleLengths, 120)
+    if i_cyc144
+        array.push(cycleLengths, 144)
+    if i_cyc180
+        array.push(cycleLengths, 180)
+    if i_cyc240
+        array.push(cycleLengths, 240)
+    if i_cyc270
+        array.push(cycleLengths, 270)
+    if i_cyc360
+        array.push(cycleLengths, 360)
+    if i_cyc144x2
+        array.push(cycleLengths, 288)
     cyclesInitialized := true
 
 // Determine cycle origin bar
@@ -432,16 +446,34 @@ if i_showRetrace and bar_index == last_bar_index
     show    = array.new_bool(0)
 
     if i_retShowAll
-        array.push(eighths, 0.0)    : array.push(names, "0/8 (0%)")      : array.push(show, true)
-        array.push(eighths, 0.125)  : array.push(names, "1/8 (12.5%)")   : array.push(show, true)
-    array.push(eighths, 0.25)   : array.push(names, "2/8 (25%)")     : array.push(show, true)
-    array.push(eighths, 0.375)  : array.push(names, "3/8 (37.5%)")   : array.push(show, true)
-    array.push(eighths, 0.5)    : array.push(names, "4/8 (50%)")     : array.push(show, true)
-    array.push(eighths, 0.625)  : array.push(names, "5/8 (62.5%)")   : array.push(show, true)
-    array.push(eighths, 0.75)   : array.push(names, "6/8 (75%)")     : array.push(show, true)
+        array.push(eighths, 0.0)
+        array.push(names, "0/8 (0%)")
+        array.push(show, true)
+        array.push(eighths, 0.125)
+        array.push(names, "1/8 (12.5%)")
+        array.push(show, true)
+    array.push(eighths, 0.25)
+    array.push(names, "2/8 (25%)")
+    array.push(show, true)
+    array.push(eighths, 0.375)
+    array.push(names, "3/8 (37.5%)")
+    array.push(show, true)
+    array.push(eighths, 0.5)
+    array.push(names, "4/8 (50%)")
+    array.push(show, true)
+    array.push(eighths, 0.625)
+    array.push(names, "5/8 (62.5%)")
+    array.push(show, true)
+    array.push(eighths, 0.75)
+    array.push(names, "6/8 (75%)")
+    array.push(show, true)
     if i_retShowAll
-        array.push(eighths, 0.875)  : array.push(names, "7/8 (87.5%)")   : array.push(show, true)
-        array.push(eighths, 1.0)    : array.push(names, "8/8 (100%)")    : array.push(show, true)
+        array.push(eighths, 0.875)
+        array.push(names, "7/8 (87.5%)")
+        array.push(show, true)
+        array.push(eighths, 1.0)
+        array.push(names, "8/8 (100%)")
+        array.push(show, true)
 
     for i = 0 to array.size(eighths) - 1
         frac = array.get(eighths, i)
