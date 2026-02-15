@@ -2,7 +2,9 @@
 // https://mozilla.org/MPL/2.0/
 // © Gann Master Indicator — A comprehensive implementation of W.D. Gann's trading methods
 // Concepts: Gann Angles/Fan, Square of 9, Time Cycles, 1/8th Retracements,
-//           Swing Charts, Price-Time Squaring, Vibration Levels, Confluence Detection
+//           Swing Charts, Price-Time Squaring, Vibration Levels, Confluence Detection,
+//           Multi-Timeframe Signal Filter (Yearly/Monthly/Weekly/Daily),
+//           Gann Magnet Levels (HTF Midpoints, Natural Squares, Round Numbers, Session H/L)
 
 //@version=5
 indicator("Gann Master Indicator", shorttitle="GANN", overlay=true,
@@ -115,6 +117,43 @@ i_vibFifths     = input.bool(true, "Fifth Ratios (×1.5, ÷1.5)", group=GRP_VIB)
 i_vibThirds     = input.bool(false, "Third Ratios (×1.33, ÷1.33)", group=GRP_VIB)
 i_colVib        = input.color(color.new(#00bcd4, 50), "Vibration Color", group=GRP_VIB)
 
+// ── Multi-Timeframe Signal Filter ─────────────────────────────────────────
+GRP_MTF = "🔎 Multi-Timeframe Filter"
+i_showMTF       = input.bool(true, "Enable MTF Signal Filter", group=GRP_MTF,
+                 tooltip="Only show signals when aligned with higher timeframe bias. Yearly → Weekly → Daily hierarchy.")
+i_mtfYearly     = input.bool(true, "Yearly Bias", group=GRP_MTF,
+                 tooltip="Use yearly high/low/close to determine the dominant trend direction")
+i_mtfMonthly    = input.bool(true, "Monthly Bias", group=GRP_MTF,
+                 tooltip="Use monthly high/low/close for intermediate trend confirmation")
+i_mtfWeekly     = input.bool(true, "Weekly Bias", group=GRP_MTF,
+                 tooltip="Use weekly structure for swing trade timing")
+i_mtfDaily      = input.bool(true, "Daily Bias", group=GRP_MTF,
+                 tooltip="Use daily structure when on intraday charts")
+i_mtfStrict     = input.bool(false, "Strict Mode (all HTFs must agree)", group=GRP_MTF,
+                 tooltip="When ON, signals only fire when ALL enabled timeframes agree on direction. When OFF, majority rules.")
+i_colMTFBull    = input.color(color.new(#00e676, 70), "HTF Bullish Zone", group=GRP_MTF)
+i_colMTFBear    = input.color(color.new(#ff1744, 70), "HTF Bearish Zone", group=GRP_MTF)
+
+// ── Gann Magnet Levels ────────────────────────────────────────────────────
+GRP_MAG = "🧲 Gann Magnet Levels"
+i_showMagnets   = input.bool(true, "Enable Gann Magnets", group=GRP_MAG,
+                 tooltip="Key price levels that 'attract' price — derived from HTF ranges, Gann natural squares, and round numbers. Ideal for swing entries on NQ and futures.")
+i_magHTF        = input.bool(true, "HTF Range Magnets (50% levels)", group=GRP_MAG,
+                 tooltip="Midpoints of yearly, monthly, weekly ranges — the strongest Gann magnet")
+i_magSquares    = input.bool(true, "Natural Square Magnets", group=GRP_MAG,
+                 tooltip="Gann natural squares near price (144, 169, 196, 225, etc.) and their roots")
+i_magRound      = input.bool(true, "Round Number Magnets", group=GRP_MAG,
+                 tooltip="Psychological round-number levels near price (e.g. 17000, 17500, 18000 for NQ)")
+i_magRoundStep  = input.int(500, "Round Number Step", minval=1, maxval=10000, group=GRP_MAG,
+                 tooltip="Step size for round numbers. 500 for NQ/ES, 100 for smaller instruments, 50 for stocks")
+i_magPrevSession = input.bool(true, "Previous Session H/L", group=GRP_MAG,
+                 tooltip="Yesterday's high, low, and midpoint — key intraday magnets for futures")
+i_magCount      = input.int(5, "Max Magnet Lines (per type)", minval=1, maxval=10, group=GRP_MAG)
+i_colMagHTF     = input.color(color.new(#ff6f00, 30), "HTF Magnet Color", group=GRP_MAG)
+i_colMagSq      = input.color(color.new(#7c4dff, 40), "Square Magnet Color", group=GRP_MAG)
+i_colMagRound   = input.color(color.new(#78909c, 40), "Round Number Color", group=GRP_MAG)
+i_colMagSess    = input.color(color.new(#26c6da, 30), "Session H/L Color", group=GRP_MAG)
+
 // ── Confluence & Dashboard ──────────────────────────────────────────────────
 GRP_DASH = "📋 Dashboard & Confluence"
 i_showDash      = input.bool(true, "Show Dashboard", group=GRP_DASH)
@@ -132,6 +171,8 @@ i_alertCycle    = input.bool(true, "Time Cycle Hit", group=GRP_ALT)
 i_alertPTSq     = input.bool(true, "Price=Time Square", group=GRP_ALT)
 i_alertSwing    = input.bool(true, "Swing Reversal", group=GRP_ALT)
 i_alertConf     = input.bool(true, "Confluence Zone", group=GRP_ALT)
+i_alertMagnet   = input.bool(true, "Magnet Level Touch", group=GRP_ALT)
+i_alertMTFConf  = input.bool(true, "MTF-Aligned Confluence", group=GRP_ALT)
 
 // ╔══════════════════════════════════════════════════════════════════════════════╗
 // ║                         CORE CALCULATIONS                                   ║
@@ -140,6 +181,83 @@ i_alertConf     = input.bool(true, "Confluence Zone", group=GRP_ALT)
 // ── ATR-Based Scaling ───────────────────────────────────────────────────────
 atrValue     = ta.atr(i_atrLen)
 pricePerBar  = i_scaleAuto ? atrValue : i_scaleManual
+
+// ╔══════════════════════════════════════════════════════════════════════════════╗
+// ║              MULTI-TIMEFRAME DATA (request.security calls)                  ║
+// ╚══════════════════════════════════════════════════════════════════════════════╝
+// These MUST be at global scope — Pine requires request.security() to execute on every bar.
+
+// ── Yearly ────────────────────────────────────────────────────────────────────
+[yHigh, yLow, yClose, yOpen] = request.security(syminfo.tickerid, "12M", [high, low, close, open], lookahead=barmerge.lookahead_on)
+yMid   = (yHigh + yLow) / 2.0
+yBias  = yClose > yMid ? 1 : yClose < yMid ? -1 : 0  // 1=bull, -1=bear, 0=neutral
+
+// ── Monthly ───────────────────────────────────────────────────────────────────
+[mHigh, mLow, mClose, mOpen] = request.security(syminfo.tickerid, "M", [high, low, close, open], lookahead=barmerge.lookahead_on)
+mMid   = (mHigh + mLow) / 2.0
+mBias  = mClose > mMid ? 1 : mClose < mMid ? -1 : 0
+
+// ── Weekly ────────────────────────────────────────────────────────────────────
+[wHigh, wLow, wClose, wOpen] = request.security(syminfo.tickerid, "W", [high, low, close, open], lookahead=barmerge.lookahead_on)
+wMid   = (wHigh + wLow) / 2.0
+wBias  = wClose > wMid ? 1 : wClose < wMid ? -1 : 0
+
+// ── Daily ─────────────────────────────────────────────────────────────────────
+[dHigh, dLow, dClose, dOpen] = request.security(syminfo.tickerid, "D", [high, low, close, open], lookahead=barmerge.lookahead_on)
+dMid   = (dHigh + dLow) / 2.0
+dBias  = dClose > dMid ? 1 : dClose < dMid ? -1 : 0
+
+// ── Previous Day Session (for futures intraday magnets) ───────────────────────
+prevDayHigh  = request.security(syminfo.tickerid, "D", high[1], lookahead=barmerge.lookahead_on)
+prevDayLow   = request.security(syminfo.tickerid, "D", low[1], lookahead=barmerge.lookahead_on)
+prevDayMid   = (prevDayHigh + prevDayLow) / 2.0
+
+// ── Compute MTF Composite Bias ────────────────────────────────────────────────
+// Sum all enabled HTF biases. Positive = bullish, negative = bearish.
+mtfScore     = 0
+mtfCount     = 0
+mtfBullCount = 0
+mtfBearCount = 0
+
+if i_showMTF
+    if i_mtfYearly
+        mtfScore  += yBias
+        mtfCount  += 1
+        if yBias == 1
+            mtfBullCount += 1
+        if yBias == -1
+            mtfBearCount += 1
+    if i_mtfMonthly
+        mtfScore  += mBias
+        mtfCount  += 1
+        if mBias == 1
+            mtfBullCount += 1
+        if mBias == -1
+            mtfBearCount += 1
+    if i_mtfWeekly
+        mtfScore  += wBias
+        mtfCount  += 1
+        if wBias == 1
+            mtfBullCount += 1
+        if wBias == -1
+            mtfBearCount += 1
+    if i_mtfDaily
+        mtfScore  += dBias
+        mtfCount  += 1
+        if dBias == 1
+            mtfBullCount += 1
+        if dBias == -1
+            mtfBearCount += 1
+
+// Strict: ALL enabled TFs must agree (all bull or all bear). Majority: net score decides.
+mtfAllAgree = mtfCount > 0 and (mtfBullCount == mtfCount or mtfBearCount == mtfCount)
+
+// Final MTF direction: +1 bull, -1 bear, 0 neutral
+mtfBias = mtfCount > 0 ? (i_mtfStrict ? (mtfAllAgree and mtfScore > 0 ? 1 : mtfAllAgree and mtfScore < 0 ? -1 : 0) : (mtfScore > 0 ? 1 : mtfScore < 0 ? -1 : 0)) : 0
+
+// Signal filter: should we allow bullish/bearish signals?
+mtfAllowBull = not i_showMTF or mtfBias >= 0   // Allow if MTF is bullish or neutral (or MTF disabled)
+mtfAllowBear = not i_showMTF or mtfBias <= 0   // Allow if MTF is bearish or neutral (or MTF disabled)
 
 // ── Pivot Detection ─────────────────────────────────────────────────────────
 pivotHigh    = ta.pivothigh(high, i_pivotLen, i_pivotLen)
@@ -638,6 +756,159 @@ if i_showVib and bar_index == last_bar_index
                      textcolor=i_colVib, size=size.tiny)
 
 // ╔══════════════════════════════════════════════════════════════════════════════╗
+// ║                  7b. GANN MAGNET LEVELS                                     ║
+// ╚══════════════════════════════════════════════════════════════════════════════╝
+
+// Gann observed that price is "attracted" to key levels like a magnet.
+// These include: HTF range midpoints (50% — the strongest retracement),
+// natural squares (numbers that are perfect squares: 144, 169, 196, ...),
+// round psychological numbers, and prior session high/low/midpoint.
+// These magnets are ideal for swing trade entries/targets on NQ, ES, and futures.
+
+var array<float> magnetLevelsList = array.new_float(0)
+
+if i_showMagnets and barstate.islast
+    array.clear(magnetLevelsList)
+
+    // ── 1. HTF Range Midpoints (the strongest Gann magnets) ───────────────────
+    if i_magHTF
+        // Yearly midpoint
+        if i_mtfYearly and not na(yHigh) and not na(yLow)
+            yMidLvl = (yHigh + yLow) / 2.0
+            array.push(magnetLevelsList, yMidLvl)
+            line.new(bar_index - 50, yMidLvl, bar_index + 20, yMidLvl,
+                 color=i_colMagHTF, width=2, style=line.style_solid)
+            label.new(bar_index + 22, yMidLvl, "Y 50%",
+                 style=label.style_label_left, color=color.new(i_colMagHTF, 80),
+                 textcolor=i_colMagHTF, size=size.tiny)
+            // Yearly 25% and 75% (3/8 and 5/8 equivalent)
+            yQ1 = yLow + (yHigh - yLow) * 0.25
+            yQ3 = yLow + (yHigh - yLow) * 0.75
+            array.push(magnetLevelsList, yQ1)
+            array.push(magnetLevelsList, yQ3)
+            line.new(bar_index - 50, yQ1, bar_index + 20, yQ1,
+                 color=color.new(i_colMagHTF, 50), width=1, style=line.style_dashed)
+            label.new(bar_index + 22, yQ1, "Y 25%",
+                 style=label.style_label_left, color=color.new(i_colMagHTF, 90),
+                 textcolor=i_colMagHTF, size=size.tiny)
+            line.new(bar_index - 50, yQ3, bar_index + 20, yQ3,
+                 color=color.new(i_colMagHTF, 50), width=1, style=line.style_dashed)
+            label.new(bar_index + 22, yQ3, "Y 75%",
+                 style=label.style_label_left, color=color.new(i_colMagHTF, 90),
+                 textcolor=i_colMagHTF, size=size.tiny)
+
+        // Monthly midpoint
+        if i_mtfMonthly and not na(mHigh) and not na(mLow)
+            mMidLvl = (mHigh + mLow) / 2.0
+            array.push(magnetLevelsList, mMidLvl)
+            line.new(bar_index - 40, mMidLvl, bar_index + 20, mMidLvl,
+                 color=i_colMagHTF, width=2, style=line.style_dashed)
+            label.new(bar_index + 22, mMidLvl, "M 50%",
+                 style=label.style_label_left, color=color.new(i_colMagHTF, 80),
+                 textcolor=i_colMagHTF, size=size.tiny)
+
+        // Weekly midpoint
+        if i_mtfWeekly and not na(wHigh) and not na(wLow)
+            wMidLvl = (wHigh + wLow) / 2.0
+            array.push(magnetLevelsList, wMidLvl)
+            line.new(bar_index - 30, wMidLvl, bar_index + 20, wMidLvl,
+                 color=i_colMagHTF, width=1, style=line.style_dotted)
+            label.new(bar_index + 22, wMidLvl, "W 50%",
+                 style=label.style_label_left, color=color.new(i_colMagHTF, 80),
+                 textcolor=i_colMagHTF, size=size.tiny)
+
+    // ── 2. Natural Square Magnets ─────────────────────────────────────────────
+    // Gann's natural squares: 1², 2², 3², ... these act as price magnets
+    // We find the nearest squares above and below current price
+    if i_magSquares
+        sqrtPrice = math.sqrt(close)
+        baseRoot  = math.floor(sqrtPrice)
+        drawn = 0
+        for r = -i_magCount to i_magCount
+            if drawn >= i_magCount * 2
+                break
+            root = baseRoot + r
+            if root > 0
+                sqLevel = root * root
+                if math.abs(sqLevel - close) / close < 0.15  // within 15% of price
+                    array.push(magnetLevelsList, sqLevel)
+                    line.new(bar_index - 25, sqLevel, bar_index + 20, sqLevel,
+                         color=i_colMagSq, width=1, style=line.style_dotted)
+                    label.new(bar_index + 22, sqLevel, str.tostring(root) + "²=" + str.tostring(sqLevel, format.mintick),
+                         style=label.style_label_left, color=color.new(i_colMagSq, 80),
+                         textcolor=i_colMagSq, size=size.tiny)
+                    drawn += 1
+
+    // ── 3. Round Number Magnets ───────────────────────────────────────────────
+    // Psychological round-number levels (e.g. 17000, 17500, 18000 for NQ)
+    if i_magRound
+        step = i_magRoundStep
+        baseRound = math.floor(close / step) * step
+        drawn = 0
+        for n = -i_magCount to i_magCount
+            if drawn >= i_magCount * 2
+                break
+            roundLvl = baseRound + n * step
+            if roundLvl > 0 and math.abs(roundLvl - close) / close < 0.10  // within 10%
+                array.push(magnetLevelsList, roundLvl)
+                line.new(bar_index - 20, roundLvl, bar_index + 20, roundLvl,
+                     color=i_colMagRound, width=1, style=line.style_dotted)
+                label.new(bar_index + 22, roundLvl, str.tostring(roundLvl, "#"),
+                     style=label.style_label_left, color=color.new(i_colMagRound, 80),
+                     textcolor=i_colMagRound, size=size.tiny)
+                drawn += 1
+
+    // ── 4. Previous Session High / Low / Midpoint ─────────────────────────────
+    // Key levels for futures intraday swing trades
+    if i_magPrevSession and not na(prevDayHigh) and not na(prevDayLow)
+        array.push(magnetLevelsList, prevDayHigh)
+        array.push(magnetLevelsList, prevDayLow)
+        array.push(magnetLevelsList, prevDayMid)
+        line.new(bar_index - 30, prevDayHigh, bar_index + 20, prevDayHigh,
+             color=i_colMagSess, width=2, style=line.style_solid)
+        label.new(bar_index + 22, prevDayHigh, "pDH",
+             style=label.style_label_left, color=color.new(i_colMagSess, 80),
+             textcolor=i_colMagSess, size=size.tiny)
+        line.new(bar_index - 30, prevDayLow, bar_index + 20, prevDayLow,
+             color=i_colMagSess, width=2, style=line.style_solid)
+        label.new(bar_index + 22, prevDayLow, "pDL",
+             style=label.style_label_left, color=color.new(i_colMagSess, 80),
+             textcolor=i_colMagSess, size=size.tiny)
+        line.new(bar_index - 30, prevDayMid, bar_index + 20, prevDayMid,
+             color=i_colMagSess, width=1, style=line.style_dashed)
+        label.new(bar_index + 22, prevDayMid, "pD50%",
+             style=label.style_label_left, color=color.new(i_colMagSess, 80),
+             textcolor=i_colMagSess, size=size.tiny)
+
+// Is price near any magnet level? Computed from raw HTF data (runs every bar for alerts)
+magnetNearLevel = false
+if i_showMagnets
+    magTol = close * 0.003  // 0.3% tolerance
+    // Check HTF midpoints
+    if i_magHTF
+        if not na(yMid) and math.abs(close - yMid) < magTol
+            magnetNearLevel := true
+        if not na(mMid) and math.abs(close - mMid) < magTol
+            magnetNearLevel := true
+        if not na(wMid) and math.abs(close - wMid) < magTol
+            magnetNearLevel := true
+    // Check previous session levels
+    if i_magPrevSession and not na(prevDayHigh)
+        if math.abs(close - prevDayHigh) < magTol or math.abs(close - prevDayLow) < magTol or math.abs(close - prevDayMid) < magTol
+            magnetNearLevel := true
+    // Check nearest round number
+    if i_magRound
+        nearestRound = math.round(close / i_magRoundStep) * i_magRoundStep
+        if math.abs(close - nearestRound) < magTol
+            magnetNearLevel := true
+    // Check nearest natural square
+    if i_magSquares
+        sqrtP = math.sqrt(close)
+        nearSq = math.round(sqrtP) * math.round(sqrtP)
+        if math.abs(close - nearSq) / close < 0.003
+            magnetNearLevel := true
+
+// ╔══════════════════════════════════════════════════════════════════════════════╗
 // ║                    8. CONFLUENCE DETECTION                                  ║
 // ╚══════════════════════════════════════════════════════════════════════════════╝
 
@@ -682,14 +953,33 @@ if i_showConfluence
         confluenceCount := confluenceCount + 1
         confluenceTools := confluenceTools + "Swg "
 
-// Highlight confluence zones on chart
+    // Check Magnet levels
+    if i_showMagnets and array.size(magnetLevelsList) > 0
+        for i = 0 to array.size(magnetLevelsList) - 1
+            lvl = array.get(magnetLevelsList, i)
+            if math.abs(close - lvl) < tolerance
+                confluenceCount := confluenceCount + 1
+                confluenceTools := confluenceTools + "Mag "
+                break
+
+// Apply MTF filter to confluence — if MTF is active and price direction conflicts, downgrade
 isConfluent = confluenceCount >= i_confThreshold
+// MTF-filtered confluence: require alignment with HTF bias for strongest signals
+mtfFilteredConfluent = isConfluent and (not i_showMTF or mtfBias != 0)
+
 bgcolor(isConfluent and i_showConfluence ? color.new(#ffeb3b, 80) : na, title="Confluence Zone")
 
-// Confluence marker
-plotshape(isConfluent and i_showConfluence, title="Confluence",
+// Confluence marker — show stronger marker when MTF-aligned
+plotshape(mtfFilteredConfluent and i_showConfluence, title="MTF Confluence",
      style=shape.diamond, location=location.abovebar,
-     color=color.new(#ff6f00, 0), size=size.small, text="C")
+     color=color.new(#ff6f00, 0), size=size.small, text="C+")
+plotshape(isConfluent and not mtfFilteredConfluent and i_showConfluence, title="Confluence",
+     style=shape.diamond, location=location.abovebar,
+     color=color.new(#ffeb3b, 20), size=size.tiny, text="c")
+
+// MTF bias background — subtle tint showing the higher-timeframe direction
+bgcolor(i_showMTF and mtfBias == 1 ? i_colMTFBull : i_showMTF and mtfBias == -1 ? i_colMTFBear : na,
+     title="MTF Bias Background")
 
 // ╔══════════════════════════════════════════════════════════════════════════════╗
 // ║                        9. DASHBOARD                                         ║
@@ -702,7 +992,7 @@ var tablePos = i_dashPos == "Top Right" ? position.top_right :
 
 textSize = i_dashSize == "Small" ? size.tiny : i_dashSize == "Large" ? size.normal : size.small
 
-var table dashTable = table.new(tablePos, 1, 20, border_width=0)
+var table dashTable = table.new(tablePos, 1, 30, border_width=0)
 
 if i_showDash and barstate.islast
     dashCol = swingDir == 1 ? color.new(#1b5e20, 20) : swingDir == -1 ? color.new(#b71c1c, 20) : color.new(#37474f, 20)
@@ -717,6 +1007,49 @@ if i_showDash and barstate.islast
     trendStr = swingDir == 1 ? "▲ BULLISH" : swingDir == -1 ? "▼ BEARISH" : "— NEUTRAL"
     table.cell(dashTable, 0, row, "Trend: " + trendStr, bgcolor=dashCol, text_color=txtCol, text_size=textSize, text_halign=text.align_left)
     row += 1
+
+    // MTF Bias breakdown
+    if i_showMTF
+        mtfBiasStr = mtfBias == 1 ? "▲ BULLISH" : mtfBias == -1 ? "▼ BEARISH" : "— MIXED"
+        mtfCol = mtfBias == 1 ? color.new(#1b5e20, 10) : mtfBias == -1 ? color.new(#b71c1c, 10) : color.new(#37474f, 10)
+        table.cell(dashTable, 0, row, "──── HTF BIAS ────", bgcolor=mtfCol, text_color=txtCol, text_size=textSize, text_halign=text.align_left)
+        row += 1
+        table.cell(dashTable, 0, row, "MTF: " + mtfBiasStr, bgcolor=mtfCol, text_color=txtCol, text_size=textSize, text_halign=text.align_left)
+        row += 1
+        if i_mtfYearly
+            yStr = yBias == 1 ? "▲" : yBias == -1 ? "▼" : "—"
+            table.cell(dashTable, 0, row, "  Yearly:  " + yStr, bgcolor=mtfCol, text_color=txtCol, text_size=textSize, text_halign=text.align_left)
+            row += 1
+        if i_mtfMonthly
+            mStr = mBias == 1 ? "▲" : mBias == -1 ? "▼" : "—"
+            table.cell(dashTable, 0, row, "  Monthly: " + mStr, bgcolor=mtfCol, text_color=txtCol, text_size=textSize, text_halign=text.align_left)
+            row += 1
+        if i_mtfWeekly
+            wStr = wBias == 1 ? "▲" : wBias == -1 ? "▼" : "—"
+            table.cell(dashTable, 0, row, "  Weekly:  " + wStr, bgcolor=mtfCol, text_color=txtCol, text_size=textSize, text_halign=text.align_left)
+            row += 1
+        if i_mtfDaily
+            dStr = dBias == 1 ? "▲" : dBias == -1 ? "▼" : "—"
+            table.cell(dashTable, 0, row, "  Daily:   " + dStr, bgcolor=mtfCol, text_color=txtCol, text_size=textSize, text_halign=text.align_left)
+            row += 1
+
+    // Nearest Magnet Level
+    if i_showMagnets and array.size(magnetLevelsList) > 0
+        nearMagAbove = close * 10.0
+        nearMagBelow = 0.0
+        for i = 0 to array.size(magnetLevelsList) - 1
+            mlvl = array.get(magnetLevelsList, i)
+            if mlvl > close and mlvl < nearMagAbove
+                nearMagAbove := mlvl
+            if mlvl < close and mlvl > nearMagBelow
+                nearMagBelow := mlvl
+        table.cell(dashTable, 0, row, "Mag Sup: " + str.tostring(nearMagBelow, format.mintick), bgcolor=dashCol, text_color=txtCol, text_size=textSize, text_halign=text.align_left)
+        row += 1
+        table.cell(dashTable, 0, row, "Mag Res: " + str.tostring(nearMagAbove, format.mintick), bgcolor=dashCol, text_color=txtCol, text_size=textSize, text_halign=text.align_left)
+        row += 1
+        if magnetNearLevel
+            table.cell(dashTable, 0, row, "⚡ NEAR MAGNET!", bgcolor=color.new(#ff6f00, 10), text_color=txtCol, text_size=textSize, text_halign=text.align_left)
+            row += 1
 
     // Square of 9 nearest levels
     if i_showSq9 and array.size(sq9LevelsList) > 0
@@ -789,6 +1122,16 @@ alertcondition(swingReversed and i_alertSwing,
 alertcondition(isConfluent and i_alertConf,
      title="Confluence Zone",
      message="Multiple Gann tools converging — high-probability zone!")
+
+// Magnet Level Touch
+alertcondition(magnetNearLevel and i_alertMagnet,
+     title="Magnet Level Touch",
+     message="Price is near a Gann Magnet level — potential swing trade entry!")
+
+// MTF-Aligned Confluence (strongest signal)
+alertcondition(mtfFilteredConfluent and i_alertMTFConf,
+     title="MTF-Aligned Confluence",
+     message="Confluence zone confirmed by higher timeframes — high-conviction signal!")
 
 // ╔══════════════════════════════════════════════════════════════════════════════╗
 // ║                      11. BAR COLORING (OPTIONAL)                            ║
